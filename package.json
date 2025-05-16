@@ -1,0 +1,33 @@
+{
+    "name": "babylon-stl-viewer",
+    "version": "1.0.0",
+    "description": "3D Mesh Editor",
+    "main": "server.js",
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "preview": "vite preview",
+        "watch": "nodemon --config nodemon.json",
+        "start": "node src/main.js",
+        "dev:watch": "concurrently \"npm run dev\" \"npm run watch\""
+    },
+    "dependencies": {
+        "@babylonjs/core": "^7.41.1",
+        "@babylonjs/gui": "^7.41.1",
+        "@babylonjs/loaders": "^7.41.1",
+        "@kitware/vtk.js": "^32.9.0",
+        "babylonjs-serializers": "^7.41.1",
+        "delaunay-triangulate": "^1.1.6",
+        "earcut": "^3.0.1",
+        "express": "^4.18.2",
+        "start": "^5.1.0",
+        "vite": "^6.0.5"
+    },
+    "devDependencies": {
+        "nodemon": "^3.0.2"
+    },
+    "type": "module",
+    "keywords": [],
+    "author": "",
+    "license": "ISC"
+}

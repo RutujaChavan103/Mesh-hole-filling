@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>3D Mesh Editor</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/feather-icons/4.29.0/feather.min.js"></script>
+</head>
+
+<body>
+    <div class="toolbar">
+        <!-- Top toolbar with icons -->
+        <div class="icon-toolbar" style="z-index: 1000; pointer-events: auto;">
+            <button class="icon-btn" id="selectMeshButton" title="Select Mesh">
+                <i data-feather="mouse-pointer"></i>
+            </button>
+            <button class="icon-btn" id="drawButton" title="Draw">
+                <i data-feather="edit-2"></i>
+            </button>
+            <button class="icon-btn" id="clearButton" title="Clear Drawing">
+                <i data-feather="trash-2"></i>
+            </button>
+            <div class="toolbar-separator"></div>
+            <button class="icon-btn" id="cutMeshButton" title="Cut Mesh">
+                <i data-feather="scissors"></i>
+            </button>
+            <button class="icon-btn" id="offsetMeshButton" title="Offset Mesh">
+                <i data-feather="layers"></i>
+            </button>
+            <input type="number" id="offsetValue" value="1.0" step="0.1" class="number-input" />
+            <div class="toolbar-separator"></div>
+            <button class="icon-btn" id="detectHoleBoundaryButton" title="Hole Boundary Detection">
+                <i data-feather="circle"></i>
+              </button>              
+            <button class="icon-btn" id="fillHoleButton" title="Hole Filling">
+                <i data-feather="dribbble"></i>
+            </button> 
+            <div class="toolbar-separator"></div>
+            <div class="file-input-wrapper">
+                <button class="icon-btn" title="Import Mesh">
+                    <i data-feather="upload"></i>
+                    <input type="file" id="fileInput" accept=".stl" />
+                </button>
+            </div>
+            <button class="icon-btn" id="downloadMeshButton" title="Download Mesh">
+                <i data-feather="download"></i>
+            </button>
+
+            <div class="toolbar-separator"></div>
+            <button class="icon-btn" id="zoomAllButton" title="Zoom All">
+                <i data-feather="maximize"></i>
+            </button>
+            <button class="icon-btn" id="hideMesh" title="Hide Mesh">
+                <i data-feather="eye-off"></i>
+            </button>
+            <button class="icon-btn" id="showAll" title="Show All">
+                <i data-feather="eye"></i>
+            </button>
+
+            <div class="toolbar-separator"></div>
+
+            <button id="preloadButton" class="icon-btn" title="Preload Mesh">
+                <i data-feather="upload"></i>
+            </button>
+        </div>
+
+        <!-- Main content area -->
+        <div class="main-content">
+            <canvas id="renderCanvas" style="pointer-events: auto;"></canvas>
+        </div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+    <script>
+
+        // Initialize event listeners after DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            feather.replace();
+            // Existing event listeners
+            document.getElementById('selectMeshButton').addEventListener('click', function () {
+                document.dispatchEvent(new CustomEvent('toggleMeshSelection'));
+            });
+
+            document.getElementById('cutMeshButton').addEventListener('click', function () {
+                document.dispatchEvent(new CustomEvent('cutMesh'));
+            });
+
+            document.getElementById('offsetMeshButton').addEventListener('click', function () {
+                const offset = document.getElementById('offsetValue').value;
+                document.dispatchEvent(new CustomEvent('offsetMesh', {
+                    detail: { offset: parseFloat(offset) }
+                }));
+            });
+
+            document.getElementById('detectHoleBoundaryButton').addEventListener('click', function () {
+                document.dispatchEvent(new CustomEvent('detectHoleBoundary'));
+            });
+
+            document.getElementById('fillHoleButton').addEventListener('click', function () {
+                document.dispatchEvent(new CustomEvent('fillHole'));
+            });
+
+            document.getElementById('downloadMeshButton').addEventListener('click', function () {
+                document.dispatchEvent(new CustomEvent('downloadMesh'));
+            });
+
+            document.getElementById('zoomAllButton').addEventListener('click', function () {
+                document.dispatchEvent(new CustomEvent('zoomAll'));
+            });
+
+            document.getElementById('clearButton').addEventListener('click', function () {
+                document.dispatchEvent(new CustomEvent('clearDrawing'));
+            });
+
+            document.getElementById('hideMesh').addEventListener('click', function () {
+                document.dispatchEvent(new CustomEvent('hideMesh'));
+            });
+
+            document.getElementById('showAll').addEventListener('click', function () {
+                document.dispatchEvent(new CustomEvent('showAll'));
+            });
+        });
+    </script>
+</body>
+
+</html>
