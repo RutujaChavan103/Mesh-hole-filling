@@ -570,6 +570,20 @@ function calculateCentroid(boundaryEdges) {
     return new BABYLON.Vector3(sumX / numVertices, sumY / numVertices, sumZ / numVertices);
 }
 
+// Helper function to check if a triangle is facing the camera
+function isTriangleFacingCamera(a, b, c, cameraPosition) {
+    const edge1 = b.subtract(a);
+    const edge2 = c.subtract(a);
+    const normal = BABYLON.Vector3.Cross(edge1, edge2);
+    
+    // Calculate dot product between normal and view direction
+    const viewDirection = a.subtract(cameraPosition);
+    const dot = normal.dot(viewDirection);
+    
+    // If dot is positive, triangle is facing away from camera
+    return dot <= 0;
+}
+
 // Projection with Earcut Hole Filling Method (For holes with 7-50 boundary edges)
 function projectionEarcutFill(mesh, boundaryEdges) {
     // 1. Order the boundary vertices
@@ -593,6 +607,9 @@ function projectionEarcutFill(mesh, boundaryEdges) {
         orderedVertices.pop();
     }
 
+    // Get camera position
+    const cameraPosition = store.scene.activeCamera.position;
+
     // Reverse for correct normal direction
     orderedVertices = orderedVertices.reverse();
 
@@ -607,9 +624,23 @@ function projectionEarcutFill(mesh, boundaryEdges) {
     console.log('Earcut 2D points:', points2DArray);
     console.log('Earcut triangles:', triangles);
 
-    // Log each triangle and check for degeneracy
+    // Filter out backfacing triangles
+    const filteredTriangles = [];
     for (let i = 0; i < triangles.length; i += 3) {
         const ia = triangles[i], ib = triangles[i+1], ic = triangles[i+2];
+        const a = orderedVertices[ia];
+        const b = orderedVertices[ib];
+        const c = orderedVertices[ic];
+        
+        // Check if triangle is facing the camera
+        if (isTriangleFacingCamera(a, b, c, cameraPosition)) {
+            filteredTriangles.push(ia, ib, ic);
+        }
+    }
+
+    // Log each triangle and check for degeneracy
+    for (let i = 0; i < filteredTriangles.length; i += 3) {
+        const ia = filteredTriangles[i], ib = filteredTriangles[i+1], ic = filteredTriangles[i+2];
         const a = orderedVertices[ia];
         const b = orderedVertices[ib];
         const c = orderedVertices[ic];
@@ -622,14 +653,14 @@ function projectionEarcutFill(mesh, boundaryEdges) {
         }
     }
     // Log which boundary indices are unused
-    const usedIndices = new Set(triangles);
-    console.log('Boundary indices:', Array.from({length: orderedVertices.length}, (_, i) => i));
-    console.log('Used indices in triangles:', Array.from(usedIndices));
-    const unused = [];
-    for (let i = 0; i < orderedVertices.length; i++) {
-        if (!usedIndices.has(i)) unused.push(i);
-    }
-    console.log('Unused boundary indices:', unused);
+    // const usedIndices = new Set(triangles);
+    // console.log('Boundary indices:', Array.from({length: orderedVertices.length}, (_, i) => i));
+    // console.log('Used indices in triangles:', Array.from(usedIndices));
+    // const unused = [];
+    // for (let i = 0; i < orderedVertices.length; i++) {
+    //     if (!usedIndices.has(i)) unused.push(i);
+    // }
+    // console.log('Unused boundary indices:', unused);
 
     // If earcut leaves a missing triangle, try to patch with centroid or fan
     if (triangles.length < orderedVertices.length - 2) {
