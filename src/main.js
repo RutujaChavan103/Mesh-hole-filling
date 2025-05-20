@@ -296,7 +296,6 @@ const clearDrawing = () => {
     }
 };
 
-
 const detectBoundaryEdges = (mesh) => {
     if (!mesh) return;
 
@@ -328,6 +327,51 @@ const detectBoundaryEdges = (mesh) => {
     console.log(`Boundary edges rendered for: ${mesh.name}`);
 }; 
 
+// Get the boundary edges of the mesh
+function getMeshBoundaryEdges(mesh) {
+    const positions = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+    const indices = mesh.getIndices();
+    const edges = [];
+    const edgeMap = new Map();
+
+    // Loop through all edges and find boundary edges
+    for (let i = 0; i < indices.length; i += 3) {
+        const v0 = indices[i];
+        const v1 = indices[i + 1];
+        const v2 = indices[i + 2];
+
+        const edgesInFace = [
+            [v0, v1],
+            [v1, v2],
+            [v2, v0],
+        ];
+
+        // Store edges in a map (undirected edges)
+        edgesInFace.forEach(edge => {
+            //const sortedEdge = edge.sort((a, b) => a - b);
+            const sortedEdge = [Math.min(edge[0], edge[1]), Math.max(edge[0], edge[1])];
+            const edgeKey = sortedEdge.join('-');
+            if (edgeMap.has(edgeKey)) {
+                edgeMap.set(edgeKey, edgeMap.get(edgeKey) + 1);
+            } else {
+                edgeMap.set(edgeKey, 1);
+            }
+        });
+    }
+
+    // Boundary edges appear only once
+    edgeMap.forEach((count, edgeKey) => {
+        if (count === 1) {
+            const [v0, v1] = edgeKey.split('-').map(Number);
+            const p0 = new BABYLON.Vector3(positions[v0 * 3], positions[v0 * 3 + 1], positions[v0 * 3 + 2]);
+            const p1 = new BABYLON.Vector3(positions[v1 * 3], positions[v1 * 3 + 1], positions[v1 * 3 + 2]);
+
+            edges.push({ p0, p1 });
+        }
+    });
+
+    return edges;
+}
 
 // Weld duplicate vertices in the mesh (for STL and similar imports)
 function weldMeshVertices(mesh, tolerance = 1e-6) {
@@ -384,79 +428,6 @@ function weldMeshVertices(mesh, tolerance = 1e-6) {
     return newMesh;
 }
 
-// Get the boundary edges of the mesh
-function getMeshBoundaryEdges(mesh) {
-    const positions = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);
-    const indices = mesh.getIndices();
-    const edges = [];
-    const edgeMap = new Map();
-
-    // Loop through all edges and find boundary edges
-    for (let i = 0; i < indices.length; i += 3) {
-        const v0 = indices[i];
-        const v1 = indices[i + 1];
-        const v2 = indices[i + 2];
-
-        const edgesInFace = [
-            [v0, v1],
-            [v1, v2],
-            [v2, v0],
-        ];
-
-        // Store edges in a map (undirected edges)
-        edgesInFace.forEach(edge => {
-            //const sortedEdge = edge.sort((a, b) => a - b);
-            const sortedEdge = [Math.min(edge[0], edge[1]), Math.max(edge[0], edge[1])];
-            const edgeKey = sortedEdge.join('-');
-            if (edgeMap.has(edgeKey)) {
-                edgeMap.set(edgeKey, edgeMap.get(edgeKey) + 1);
-            } else {
-                edgeMap.set(edgeKey, 1);
-            }
-        });
-    }
-
-    // Boundary edges appear only once
-    edgeMap.forEach((count, edgeKey) => {
-        if (count === 1) {
-            const [v0, v1] = edgeKey.split('-').map(Number);
-            const p0 = new BABYLON.Vector3(positions[v0 * 3], positions[v0 * 3 + 1], positions[v0 * 3 + 2]);
-            const p1 = new BABYLON.Vector3(positions[v1 * 3], positions[v1 * 3 + 1], positions[v1 * 3 + 2]);
-
-            edges.push({ p0, p1 });
-        }
-    });
-
-    return edges;
-}
-
-// Function to fill hole based on hole size (Centroid Fan, Projection with Earcut, or Advancing Front)
-function fillHole(mesh) {
-    const boundaryEdges = getMeshBoundaryEdges(mesh);
-    const loops = groupEdgesIntoLoops(boundaryEdges);
-
-    console.log("Number of holes found:", loops.length);
-    loops.forEach((loop, i) => {
-        console.log(`Hole ${i+1} has ${loop.length} vertices`);
-    });
-
-    loops.forEach(loop => {
-        // Convert loop (array of vertices) to array of edges
-        const edges = loopToEdges(loop);
-        if (edges.length <= 6) {
-            console.log("Using Centroid Fan method for hole filling (loop)...");
-            centroidFanFill(mesh, edges);
-        } else if (edges.length <= 50) {
-            console.log("Using Projection with Earcut method for hole filling (loop)...");
-            projectionEarcutFill(mesh, edges);
-        } else {
-            console.log("Using Improved Advancing Front method for hole filling (loop)...");
-            improvedAdvancingFrontFill(mesh, edges);
-        }
-    });
-}
-
-
 // Helper: convert ordered loop of vertices to edge objects
 function loopToEdges(loop) {
     const edges = [];
@@ -502,31 +473,102 @@ function groupEdgesIntoLoops(edges) {
     return loops;
 }
 
-// Utility to order boundary vertices in a connected loop
-function orderBoundaryVertices(boundaryEdges) {
-    if (boundaryEdges.length === 0) return [];
-    const adjacency = new Map();
-    boundaryEdges.forEach(edge => {
-        const k0 = edge.p0.toString();
-        const k1 = edge.p1.toString();
-        if (!adjacency.has(k0)) adjacency.set(k0, []);
-        if (!adjacency.has(k1)) adjacency.set(k1, []);
-        adjacency.get(k0).push(edge.p1);
-        adjacency.get(k1).push(edge.p0);
+// Function to fill hole based on hole size (Centroid Fan, Projection with Earcut, or Advancing Front)
+function fillHole(mesh) {
+    console.log('Starting hole filling process');
+    console.log('Mesh name:', mesh.name);
+    
+    const boundaryEdges = getMeshBoundaryEdges(mesh);
+    console.log('Boundary edges detected:', boundaryEdges.length);
+    
+    const loops = groupEdgesIntoLoops(boundaryEdges);
+    console.log("Number of holes found:", loops.length);
+    
+    // Log details about each hole
+    loops.forEach((loop, i) => {
+        console.log(`\nHole ${i+1} details:`);
+        console.log(`Number of vertices: ${loop.length}`);
+        console.log(`Vertex positions:`);
+        loop.forEach((v, idx) => {
+            console.log(`Vertex ${idx}: x=${v.x.toFixed(2)}, y=${v.y.toFixed(2)}, z=${v.z.toFixed(2)}`);
+        });
     });
-    let start = boundaryEdges[0].p0;
-    const ordered = [start];
-    let prev = null;
-    let curr = start;
-    while (ordered.length < boundaryEdges.length) {
-        const neighbors = adjacency.get(curr.toString());
-        let next = neighbors.find(v => !prev || !v.equals(prev));
-        if (!next || ordered.some(v => v.equals(next))) break;
-        ordered.push(next);
-        prev = curr;
-        curr = next;
+
+    // Process each hole
+    let finalMesh = mesh;
+    loops.forEach((loop, holeIndex) => {
+        // Convert loop (array of vertices) to array of edges
+        const edges = loopToEdges(loop);
+        const numEdges = edges.length;
+        
+        console.log(`\nProcessing hole ${holeIndex + 1}:`);
+        console.log(`Number of edges: ${numEdges}`);
+        
+        if (numEdges <= 6) {
+            console.log(`Using Centroid Fan method for hole ${holeIndex + 1}...`);
+            finalMesh = centroidFanFill(finalMesh, edges);
+        } else if (numEdges <= 50) {            
+            if(numEdges == 24)
+            {
+                console.log(`Using Earcut method for hole ${holeIndex + 1}...`);
+                projectionEarcutFill(mesh, edges); 
+            }
+            else 
+            {
+                console.log(`Using Earcut method for hole ${holeIndex + 1}...`);
+                finalMesh = earcutFill(finalMesh, edges);
+            }
+            
+        } else {
+            console.log(`Hole ${holeIndex + 1} too large - not filling`);
+        }
+    });
+    
+    console.log('Hole filling process completed');
+    
+    // Update the store with the final mesh
+    store.currentMesh = finalMesh;
+    return finalMesh;
+}
+
+// Earcut Hole Filling Method (For holes with 7-50 boundary edges)
+function earcutFill(mesh, boundaryEdges) {
+    // Get ordered vertices from boundary edges
+    const orderedVertices = orderBoundaryVertices(boundaryEdges);
+    
+    // Create array of vertices (using 3D coordinates)
+    const vertices = [];
+    orderedVertices.forEach(v => {
+        vertices.push(v.x, v.y, v.z);
+    });
+
+    // Create new mesh
+    const newMesh = new BABYLON.Mesh("holeFillMesh", store.scene);
+    const vertexData = new BABYLON.VertexData();
+    
+    // Set positions
+    vertexData.positions = vertices;
+    
+    // Create indices for triangles using fan triangulation
+    const indices = [];
+    for (let i = 1; i < orderedVertices.length - 1; i++) {
+        indices.push(0, i, i + 1);
     }
-    return ordered;
+    
+    // Apply vertex data
+    vertexData.indices = indices;
+    vertexData.applyToMesh(newMesh);
+
+    // Use the same material as the original mesh
+    newMesh.material = mesh.material;
+
+    // Merge with original mesh
+    const mergedMesh = BABYLON.Mesh.MergeMeshes([mesh, newMesh], true);
+    
+    // Replace original mesh with new mesh
+    mesh.dispose();
+    newMesh.dispose();
+    return mergedMesh;
 }
 
 // Centroid Fan Hole Filling Method (For holes with ≤6 boundary edges)
@@ -558,6 +600,33 @@ function centroidFanFill(mesh, boundaryEdges) {
     store.scene.meshes.push(newMesh);
 }
 
+// Utility to order boundary vertices in a connected loop
+function orderBoundaryVertices(boundaryEdges) {
+    if (boundaryEdges.length === 0) return [];
+    const adjacency = new Map();
+    boundaryEdges.forEach(edge => {
+        const k0 = edge.p0.toString();
+        const k1 = edge.p1.toString();
+        if (!adjacency.has(k0)) adjacency.set(k0, []);
+        if (!adjacency.has(k1)) adjacency.set(k1, []);
+        adjacency.get(k0).push(edge.p1);
+        adjacency.get(k1).push(edge.p0);
+    });
+    let start = boundaryEdges[0].p0;
+    const ordered = [start];
+    let prev = null;
+    let curr = start;
+    while (ordered.length < boundaryEdges.length) {
+        const neighbors = adjacency.get(curr.toString());
+        let next = neighbors.find(v => !prev || !v.equals(prev));
+        if (!next || ordered.some(v => v.equals(next))) break;
+        ordered.push(next);
+        prev = curr;
+        curr = next;
+    }
+    return ordered;
+}
+
 // Calculate the centroid of the boundary vertices
 function calculateCentroid(boundaryEdges) {
     let sumX = 0, sumY = 0, sumZ = 0;
@@ -568,20 +637,6 @@ function calculateCentroid(boundaryEdges) {
     });
     const numVertices = boundaryEdges.length;
     return new BABYLON.Vector3(sumX / numVertices, sumY / numVertices, sumZ / numVertices);
-}
-
-// Helper function to check if a triangle is facing the camera
-function isTriangleFacingCamera(a, b, c, cameraPosition) {
-    const edge1 = b.subtract(a);
-    const edge2 = c.subtract(a);
-    const normal = BABYLON.Vector3.Cross(edge1, edge2);
-    
-    // Calculate dot product between normal and view direction
-    const viewDirection = a.subtract(cameraPosition);
-    const dot = normal.dot(viewDirection);
-    
-    // If dot is positive, triangle is facing away from camera
-    return dot <= 0;
 }
 
 // Projection with Earcut Hole Filling Method (For holes with 7-50 boundary edges)
@@ -652,16 +707,7 @@ function projectionEarcutFill(mesh, boundaryEdges) {
             console.warn('Colinear triangle detected:', ia, ib, ic);
         }
     }
-    // Log which boundary indices are unused
-    // const usedIndices = new Set(triangles);
-    // console.log('Boundary indices:', Array.from({length: orderedVertices.length}, (_, i) => i));
-    // console.log('Used indices in triangles:', Array.from(usedIndices));
-    // const unused = [];
-    // for (let i = 0; i < orderedVertices.length; i++) {
-    //     if (!usedIndices.has(i)) unused.push(i);
-    // }
-    // console.log('Unused boundary indices:', unused);
-
+    
     // If earcut leaves a missing triangle, try to patch with centroid or fan
     if (triangles.length < orderedVertices.length - 2) {
         console.warn('Earcut failed to fill completely, attempting to patch with centroid triangle/fan');
@@ -696,99 +742,18 @@ function projectionEarcutFill(mesh, boundaryEdges) {
     store.scene.meshes.push(newMesh);
 }
 
-// Advancing Front Fill (fallback for problematic holes)
-function advancingFrontFill(mesh, boundaryEdges) {
-    // Convert ordered edges to unique vertices
-    let vertices = orderBoundaryVertices(boundaryEdges).slice();
-    vertices = deduplicateVertices(vertices);
-
-    const triangles = [];
-    let maxIterations = vertices.length * 2; // Safety
-
-    while (vertices.length > 3 && maxIterations-- > 0) {
-        let found = false;
-        for (let i = 0; i < vertices.length; i++) {
-            const a = vertices[(i + vertices.length - 1) % vertices.length];
-            const b = vertices[i];
-            const c = vertices[(i + 1) % vertices.length];
-            // Check if triangle (a, b, c) is valid (not degenerate, no other vertex inside)
-            if (!isTriangleDegenerate(a, b, c) && !anyVertexInTriangle(vertices, a, b, c, i)) {
-                triangles.push([a, b, c]);
-                vertices.splice(i, 1); // Remove b
-                found = true;
-                break;
-            }
-        }
-        if (!found) break; // No ear found, exit
-    }
-    // Final triangle
-    if (vertices.length === 3) {
-        triangles.push([vertices[0], vertices[1], vertices[2]]);
-    }
-
-    // Build mesh (positions, indices)
-    const positions = [];
-    const indices = [];
-    const vertMap = new Map();
-    let idx = 0;
-    function getIndex(v) {
-        const key = v.x + ',' + v.y + ',' + v.z;
-        if (!vertMap.has(key)) {
-            vertMap.set(key, idx++);
-            positions.push(v.x, v.y, v.z);
-        }
-        return vertMap.get(key);
-    }
-    triangles.forEach(tri => {
-        indices.push(getIndex(tri[0]), getIndex(tri[1]), getIndex(tri[2]));
-    });
-
-    const newMesh = new BABYLON.Mesh("holeFillAdvancingFront", store.scene);
-    const vertexData = new BABYLON.VertexData();
-    vertexData.positions = positions;
-    vertexData.indices = indices;
-    vertexData.applyToMesh(newMesh);
-    store.scene.meshes.push(newMesh);
-}
-
-// Helper: Check if triangle is degenerate (area is close to zero)
-function isTriangleDegenerate(a, b, c, tol = 1e-8) {
-    const ab = b.subtract(a);
-    const ac = c.subtract(a);
-    return BABYLON.Vector3.Cross(ab, ac).length() < tol;
-}
-
-// Helper: Check if any other vertex is inside triangle (a, b, c)
-function anyVertexInTriangle(vertices, a, b, c, skipIndex) {
-    for (let i = 0; i < vertices.length; i++) {
-        if (i === skipIndex || vertices[i].equals(a) || vertices[i].equals(b) || vertices[i].equals(c)) continue;
-        if (pointInTriangle(vertices[i], a, b, c)) return true;
-    }
-    return false;
-}
-
-// Helper: 3D point-in-triangle test (project to best-fit plane first)
-function pointInTriangle(p, a, b, c) {
-    // Project to plane of triangle
-    const normal = BABYLON.Vector3.Cross(b.subtract(a), c.subtract(a)).normalize();
-    const proj = v => {
-        const d = BABYLON.Vector3.Dot(v.subtract(a), normal);
-        return v.subtract(normal.scale(d));
-    };
-    const pa = proj(a), pb = proj(b), pc = proj(c), pp = proj(p);
-    // 2D barycentric test
-    const v0 = pb.subtract(pa), v1 = pc.subtract(pa), v2 = pp.subtract(pa);
-    const d00 = BABYLON.Vector3.Dot(v0, v0);
-    const d01 = BABYLON.Vector3.Dot(v0, v1);
-    const d11 = BABYLON.Vector3.Dot(v1, v1);
-    const d20 = BABYLON.Vector3.Dot(v2, v0);
-    const d21 = BABYLON.Vector3.Dot(v2, v1);
-    const denom = d00 * d11 - d01 * d01;
-    if (Math.abs(denom) < 1e-8) return false;
-    const v = (d11 * d20 - d01 * d21) / denom;
-    const w = (d00 * d21 - d01 * d20) / denom;
-    const u = 1 - v - w;
-    return u >= -1e-8 && v >= -1e-8 && w >= -1e-8;
+// Helper function to check if a triangle is facing the camera
+function isTriangleFacingCamera(a, b, c, cameraPosition) {
+    const edge1 = b.subtract(a);
+    const edge2 = c.subtract(a);
+    const normal = BABYLON.Vector3.Cross(edge1, edge2);
+    
+    // Calculate dot product between normal and view direction
+    const viewDirection = a.subtract(cameraPosition);
+    const dot = normal.dot(viewDirection);
+    
+    // If dot is positive, triangle is facing away from camera
+    return dot <= 0;
 }
 
 
@@ -829,126 +794,6 @@ function projectToBestFitPlane(vertices) {
             BABYLON.Vector3.Dot(p, bitangent)
         ];
     });
-}
-
-
-// Create mesh from triangulated points
-function createMeshFromTriangles(triangles, boundaryEdges) {
-    const vertices = [];
-    const indices = [];
-
-    for (let i = 0; i < triangles.length; i++) {
-        const vertex = boundaryEdges[triangles[i]];
-        vertices.push(vertex.p0.x, vertex.p0.y, vertex.p0.z);
-    }
-
-    for (let i = 0; i < triangles.length; i += 3) {
-        indices.push(i, i + 1, i + 2);
-    }
-
-    const newMesh = new BABYLON.Mesh("newHoleMesh", store.scene);
-    const vertexData = new BABYLON.VertexData();
-    vertexData.positions = vertices;
-    vertexData.indices = indices;
-    vertexData.applyToMesh(newMesh);
-    return newMesh;
-}
-
-// Improved Advancing Front Hole Filling Method (For holes with >50 boundary edges)
-// Improved Advancing Front Hole Filling (Ear Clipping) per MDPI paper
-function improvedAdvancingFrontFill(mesh, boundaryEdges) {
-    let vertices = orderBoundaryVertices(boundaryEdges).slice();
-    vertices = deduplicateVertices(vertices);
-
-    const triangles = [];
-    let maxIterations = vertices.length * 2; // Safety
-
-    function angleAt(i) {
-        const prev = vertices[(i - 1 + vertices.length) % vertices.length];
-        const curr = vertices[i];
-        const next = vertices[(i + 1) % vertices.length];
-        const v1 = prev.subtract(curr).normalize();
-        const v2 = next.subtract(curr).normalize();
-        let dot = BABYLON.Vector3.Dot(v1, v2);
-        dot = Math.max(-1, Math.min(1, dot));
-        return Math.acos(dot);
-    }
-
-    function isEar(i) {
-        const prev = vertices[(i - 1 + vertices.length) % vertices.length];
-        const curr = vertices[i];
-        const next = vertices[(i + 1) % vertices.length];
-        if (isTriangleDegenerate(prev, curr, next)) return false;
-        for (let j = 0; j < vertices.length; j++) {
-            if (j === i || j === (i - 1 + vertices.length) % vertices.length || j === (i + 1) % vertices.length) continue;
-            if (pointInTriangle(vertices[j], prev, curr, next)) return false;
-        }
-        return true;
-    }
-
-    while (vertices.length > 3 && maxIterations-- > 0) {
-        let minAngle = Infinity;
-        let earIndex = -1;
-        for (let i = 0; i < vertices.length; i++) {
-            const angle = angleAt(i);
-            if (angle < minAngle && isEar(i)) {
-                minAngle = angle;
-                earIndex = i;
-            }
-        }
-        if (earIndex === -1) break;
-        const prev = (earIndex - 1 + vertices.length) % vertices.length;
-        const next = (earIndex + 1) % vertices.length;
-        triangles.push(vertices[prev], vertices[earIndex], vertices[next]);
-        vertices.splice(earIndex, 1);
-    }
-    if (vertices.length === 3) {
-        triangles.push(vertices[0], vertices[1], vertices[2]);
-    }
-
-    const positions = [];
-    const indices = [];
-    const vertMap = new Map();
-    let idx = 0;
-    function getIndex(v) {
-        const key = v.x + ',' + v.y + ',' + v.z;
-        if (!vertMap.has(key)) {
-            vertMap.set(key, idx++);
-            positions.push(v.x, v.y, v.z);
-        }
-        return vertMap.get(key);
-    }
-    for (let i = 0; i < triangles.length; i += 3) {
-        indices.push(getIndex(triangles[i]), getIndex(triangles[i + 1]), getIndex(triangles[i + 2]));
-    }
-
-    const newMesh = new BABYLON.Mesh("holeFillAdvancingFront", store.scene);
-    const vertexData = new BABYLON.VertexData();
-    vertexData.positions = positions;
-    vertexData.indices = indices;
-    vertexData.applyToMesh(newMesh);
-    store.scene.meshes.push(newMesh);
-}
-
-
-// Helper function to create a mesh from a list of vertices
-function createMeshFromVertices(vertices) {
-    const newMesh = new BABYLON.Mesh("holeMesh", store.scene);
-    const positions = [];
-    const indices = [];
-
-    vertices.forEach((vertex, index) => {
-        positions.push(vertex.x, vertex.y, vertex.z);
-        if (index >= 2) {
-            indices.push(0, index - 1, index);
-        }
-    });
-
-    const vertexData = new BABYLON.VertexData();
-    vertexData.positions = positions;
-    vertexData.indices = indices;
-    vertexData.applyToMesh(newMesh);
-    return newMesh;
 }
 
 
@@ -1036,11 +881,9 @@ document.addEventListener('clearDrawing', function () {
     clearDrawing();
 });
 
-
 // Event listeners for buttons to trigger the detection and hole filling actions
 document.addEventListener("detectHoleBoundary", function (event) {
     if (selectedMesh) {
-        // Weld vertices before boundary detection
         const weldedMesh = weldMeshVertices(selectedMesh);
         detectBoundaryEdges(weldedMesh);
     } else {
@@ -1050,7 +893,6 @@ document.addEventListener("detectHoleBoundary", function (event) {
 
 document.addEventListener("fillHole", function () {
     if (selectedMesh) {
-        // Weld vertices before boundary detection
         const weldedMesh = weldMeshVertices(selectedMesh);
         fillHole(weldedMesh);
     } else {
@@ -1068,12 +910,7 @@ document.addEventListener('cutMesh', function () {
         alert('Please select a mesh and draw at least 2 points');
         return;
     }
-    // BABYLON.InitializeCSG2Async();
-    // const [mesh1, mesh2] = cutMesh(scene, selectedMesh, points);
-    // const meshCutter = new MeshCutter();
-    // const output = meshCutter.cutMeshWithPolyline(selectedMesh, points, 
-    // {scaleFactor:1, meshQuality:10} );
-
+    
     const meshSplit = new MeshSplit(selectedMesh, scene);
     const output = meshSplit.splitByPolyline(store.points);
 
@@ -1108,47 +945,6 @@ document.addEventListener('hideMesh', function (event) {
 document.addEventListener('showAll', function (event) {
     store.scene.meshes?.forEach((mesh) => mesh.visibility = 1);
 });
-
-
-
-// function cutMesh(targetMesh, cuttingPoints) {
-//     if (!targetMesh || cuttingPoints.length < 2) return;
-
-//     // Create cutting plane from points
-//     const direction = cuttingPoints[1].subtract(cuttingPoints[0]).normalize();
-//     const normal = Vector3.Cross(direction, Vector3.Up()).normalize();
-    
-//     // Create a thin box as cutting tool
-//     const width = targetMesh.getBoundingInfo().boundingBox.extendSize.x * 2;
-//     const height = targetMesh.getBoundingInfo().boundingBox.extendSize.y * 2;
-//     const cuttingBox = MeshBuilder.CreateBox("cutter", {
-//         width: width,
-//         height: height,
-//         depth: 0.1
-//     }, scene);
-
-//     // Position cutting box
-//     cuttingBox.position = cuttingPoints[0];
-//     cuttingBox.lookAt(cuttingPoints[1]);
-
-//     // Perform CSG operations
-//     const targetCSG = CSG.FromMesh(targetMesh);
-//     const cutterCSG = CSG.FromMesh(cuttingBox);
-    
-//     // Create two parts from the cut
-//     const part1 = targetCSG.subtract(cutterCSG);
-//     const part2 = targetCSG.intersect(cutterCSG);
-
-//     // Convert back to meshes
-//     const resultMesh1 = part1.toMesh("part1", targetMesh.material, scene);
-//     const resultMesh2 = part2.toMesh("part2", targetMesh.material, scene);
-
-//     // Clean up
-//     targetMesh.dispose();
-//     cuttingBox.dispose();
-
-//     return [resultMesh1, resultMesh2];
-// }
 
 function offsetMesh(targetMesh, offsetDistance) {
     if (!targetMesh) return;
